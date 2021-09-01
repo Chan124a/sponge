@@ -5,6 +5,7 @@
 
 #include <cstdint>
 #include <string>
+#include <set>
 
 //! \brief A class that assembles a series of excerpts from a byte stream (possibly out of order,
 //! possibly overlapping) into an in-order byte stream.
@@ -14,7 +15,29 @@ class StreamReassembler {
 
     ByteStream _output;  //!< The reassembled in-order byte stream
     size_t _capacity;    //!< The maximum number of bytes
+    size_t _unassembled_bytes=0; //The number of unassembled_bytes
+    
+    // 使用内存管理中块结构的思想
+    struct block{
+      size_t index=0;
+      size_t lengh=0;
+      std::string data="";
+      bool operator<(const block A)const{return index<A.index;}
+    };
+    // 用于判断两个块是否重合
+    bool _is_coincide(const block A,const block B)const;
+    // 将块压入_output中
+    void _push();
+    // 连续判断两个块是否能合并
+    void _check(std::set<StreamReassembler::block>::iterator it,block &temp);
 
+    // 使用set是为了利用set的红黑树自动排序功能
+    std::set<block> _block={};
+
+    size_t _first_unread=0,_first_unassembled=0,_first_unacceptable=0;
+    
+    // 使用_eof来判断是否结束输入
+    bool _eof=false;
   public:
     //! \brief Construct a `StreamReassembler` that will store up to `capacity` bytes.
     //! \note This capacity limits both the bytes that have been reassembled,
@@ -46,6 +69,10 @@ class StreamReassembler {
     //! \brief Is the internal state empty (other than the output stream)?
     //! \returns `true` if no substrings are waiting to be assembled
     bool empty() const;
+
+    size_t first_unassembled()const{
+      //不要直接返回_first_unassembled,否则会报错
+      return _output.bytes_written();};
 };
 
 #endif  // SPONGE_LIBSPONGE_STREAM_REASSEMBLER_HH
