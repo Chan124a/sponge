@@ -15,6 +15,38 @@
 //! segments, keeps track of which segments are still in-flight,
 //! maintains the Retransmission Timer, and retransmits in-flight
 //! segments if the retransmission timer expires.
+class TCPRetransmissionTimer{
+  public:
+  unsigned int _initial_RTO;
+  unsigned int _RTO;
+  unsigned int _T0;
+  bool _open;
+
+  TCPRetransmissionTimer(const uint16_t retx_timeout):_initial_RTO(retx_timeout),_RTO(retx_timeout),_T0(0),_open(1){}
+
+  bool open(){return _open;}
+  void start(){
+    _open=1;
+    _T0=0;
+  }
+  void close(){
+    _open=0;
+    _T0=0;
+  }
+  bool tick(size_t ms_since_last_tick){
+    if(!open())return 0;
+    if(ms_since_last_tick>_RTO-_T0){
+      _T0=_RTO;
+    }else{
+      _T0+=ms_since_last_tick;
+    }
+    if(_T0>=_RTO){
+      _T0=0;
+      return 1;
+    }
+    return 0;
+  }
+};
 class TCPSender {
   private:
     //! our initial sequence number, the number for our SYN.
@@ -22,16 +54,35 @@ class TCPSender {
 
     //! outbound queue of segments that the TCPSender wants sent
     std::queue<TCPSegment> _segments_out{};
+    //保存已发送但还没确认的报文
+    std::queue<TCPSegment> _segments_outstanding{};
+
+    //! bytes in flight
+    size_t _nBytes_inflight;
+
+    //! last ackno
+    uint64_t _recv_ackno;
+
+    //! TCP retransmission timer
+    TCPRetransmissionTimer _timer;
+
+    //! notify the window size
+    size_t _window_size;
 
     //! retransmission timer for the connection
-    unsigned int _initial_retransmission_timeout;
+    unsigned int _consecutive_retransmissions;
 
     //! outgoing stream of bytes that have not yet been sent
     ByteStream _stream;
 
     //! the (absolute) sequence number for the next byte to be sent
-    uint64_t _next_seqno{0};
+    uint64_t _next_seqno;
 
+    //! the flag of SYN sent
+    bool _syn_sent;
+
+    //! the flag of FIN sent
+    bool _fin_sent;
   public:
     //! Initialize a TCPSender
     TCPSender(const size_t capacity = TCPConfig::DEFAULT_CAPACITY,
@@ -52,6 +103,9 @@ class TCPSender {
 
     //! \brief Generate an empty-payload segment (useful for creating empty ACK segments)
     void send_empty_segment();
+
+    //! \brief Generater an non-empty segment
+    void send_non_empty_segment(TCPSegment &seg);
 
     //! \brief create and send segments to fill as much of the window as possible
     void fill_window();
@@ -87,6 +141,10 @@ class TCPSender {
     //! \brief relative seqno for the next byte to be sent
     WrappingInt32 next_seqno() const { return wrap(_next_seqno, _isn); }
     //!@}
+
+    bool syn_sent()const{return _syn_sent;}
+
+    bool fin_sent()const{return _fin_sent;}
 };
 
 #endif  // SPONGE_LIBSPONGE_TCP_SENDER_HH
